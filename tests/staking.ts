@@ -2,7 +2,7 @@ import assert from "assert";
 import * as anchor from '@project-serum/anchor';
 import { PublicKey, Keypair, SystemProgram } from "@solana/web3.js";
 import { Program } from '@project-serum/anchor';
-import * as spl from '@solana/spl-token';
+const spl = require("@solana/spl-token");
 import { Staking } from '../target/types/staking'; 
 
 
@@ -32,32 +32,79 @@ describe("staking", () => {
 
   let wallet = anchor.web3.Keypair.generate();
 
+  // const TokenInstructions = require("@project-serum/serum").TokenInstructions;
 
 
+  // const TOKEN_PROGRAM_ID = new anchor.web3.PublicKey(
+  //   TokenInstructions.TOKEN_PROGRAM_ID.toString()
+  // );
 
   it("Is initialized!", async () => {
     // Add your test here.
 
 
+    let amount = 500000
 
     await provider.connection.confirmTransaction(
       await provider.connection.requestAirdrop(alice.publicKey, 10000000000),
       "confirmed"
     );
 
-    const userBalance = await provider.connection.getBalance(alice.publicKey);
+    let userBalance = await provider.connection.getBalance(alice.publicKey);
+    console.log(userBalance)
     assert.strictEqual(10000000000, userBalance);
 
 
-    const mintA = await spl.createMint(
+    let mint = await spl.createMint(
       provider.connection,
       alice,
-      wallet.publicKey,
+      alice.publicKey,
       null,
-      0,
-      spl.TOKEN_PROGRAM_ID
+      6,
+      // null,
+      // TOKEN_PROGRAM_ID
     );
 
+    userBalance = await provider.connection.getBalance(alice.publicKey);  
+    console.log(userBalance);
+
+    const aliceTokenWallet = await spl.createAccount(provider.connection, alice, mint, alice.publicKey);
+    
+    userBalance = await provider.connection.getBalance(alice.publicKey);  
+    console.log(userBalance);
+
+
+    await spl.mintTo(provider.connection, alice, mint, aliceTokenWallet, alice.publicKey,amount,[alice]);
+
+    // await mint.mintTo(
+    //   aliceTokenWallet,
+    //   alice.publicKey,
+    //   [alice],
+    //   500
+    // );
+
+    let _aliceTokenWallet = await spl.getAccount(provider.connection ,aliceTokenWallet);
+
+    console.log(_aliceTokenWallet.amount.toString());
+
+    userBalance = await provider.connection.getBalance(alice.publicKey);  
+    console.log(userBalance);
+
+
+    [statePDA, stateBump] = await anchor.web3.PublicKey.findProgramAddress([Buffer.from("state"), alice.publicKey.toBuffer(), mint.toBuffer(), uidBuffer], program.programId,);
+
+    [escrowPDA, escrowBump] = await anchor.web3.PublicKey.findProgramAddress([Buffer.from("wallet"), alice.publicKey.toBuffer(), mint.toBuffer(), uidBuffer], program.programId,);
+
+    // const tx = await program.methods.initialize().accounts({
+
+    // }).signers([alice]).rpc();
+
+    // const tx = await programAsd.methods.initialize()
+    //   .accounts({
+    //     storedData: storedData,
+    //     signer: keyPair.publicKey,
+    //     systemProgram: anchor.web3.SystemProgram.programId,
+    //   }).signers([keyPair]).rpc();
     
   });
 });
