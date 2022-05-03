@@ -1,10 +1,9 @@
 import assert from "assert";
-import * as anchor from '@project-serum/anchor';
+import * as anchor from "@project-serum/anchor";
 // import { PublicKey, Keypair, SystemProgram } from "@solana/web3.js";
-import { Program } from '@project-serum/anchor';
+import { Program } from "@project-serum/anchor";
 const spl = require("@solana/spl-token");
-import { Staking } from '../target/types/staking'; 
-
+import { Staking } from "../target/types/staking";
 
 describe("staking", () => {
   // Configure the client to use the local cluster.
@@ -13,107 +12,181 @@ describe("staking", () => {
 
   const program = anchor.workspace.Staking as Program<Staking>;
 
-
   let uid = new anchor.BN(10);
-  let uidBuffer = uid.toBuffer();
+  let uidBuffer = uid.toBuffer("le", 8);
 
   let statePDA, stateBump, escrowPDA, escrowBump;
 
-  const getPDA = async(mint) => {
+  const getPDA = async (mint) => {
+    [statePDA, stateBump] = await anchor.web3.PublicKey.findProgramAddress(
+      [
+        Buffer.from("state"),
+        alice.publicKey.toBuffer(),
+        mint.toBuffer(),
+        uidBuffer,
+      ],
+      program.programId
+    );
 
-    [statePDA, stateBump] = await anchor.web3.PublicKey.findProgramAddress([Buffer.from("state"), alice.publicKey.toBuffer(), mint.toBuffer(), uidBuffer], program.programId,);
+    [escrowPDA, escrowBump] = await anchor.web3.PublicKey.findProgramAddress(
+      [
+        Buffer.from("wallet"),
+        mint.toBuffer(),
+        uidBuffer,
+      ],
+      program.programId
+    );
 
-    [escrowPDA, escrowBump] = await anchor.web3.PublicKey.findProgramAddress([Buffer.from("wallet"), alice.publicKey.toBuffer(), mint.toBuffer(), uidBuffer], program.programId,);
+    return [statePDA, stateBump, escrowPDA, escrowBump];
 
-  }
-
+  };
 
   let alice = anchor.web3.Keypair.generate();
 
   let wallet = anchor.web3.Keypair.generate();
 
-  // const TokenInstructions = require("@project-serum/serum").TokenInstructions;
+  let amount = 500000;
+
+  let dep = 100000;
+
+  let depositAmount = new anchor.BN(dep);
+
+  let withdrawAmount = new anchor.BN(50000);
+
+  let tokenMint: { toBuffer: () => Uint8Array | Buffer; };
+  let aliceTokenWallet: any;
 
 
-  // const TOKEN_PROGRAM_ID = new anchor.web3.PublicKey(
-  //   TokenInstructions.TOKEN_PROGRAM_ID.toString()
-  // );
-
-  it("Is initialized!", async () => {
-    // Add your test here.
-
-
-    let amount = 500000;
-
-    let depositAmount = new anchor.BN(100000);
-
+  it("is Wallet funded", async () => {
     await provider.connection.confirmTransaction(
       await provider.connection.requestAirdrop(alice.publicKey, 10000000000),
       "confirmed"
     );
 
     let userBalance = await provider.connection.getBalance(alice.publicKey);
-    // console.log(userBalance)
     assert.strictEqual(10000000000, userBalance);
+  });
 
-
-    let mint = await spl.createMint(
+  it("creates mint and token account", async () => {
+    tokenMint = await spl.createMint(
       provider.connection,
       alice,
       alice.publicKey,
       null,
-      6,
-      // null,
-      // TOKEN_PROGRAM_ID
+      6
     );
 
-    // userBalance = await provider.connection.getBalance(alice.publicKey);  
-    // console.log(userBalance);
+    aliceTokenWallet = await spl.createAccount(
+      provider.connection,
+      alice,
+      tokenMint,
+      alice.publicKey
+    );
 
-    const aliceTokenWallet = await spl.createAccount(provider.connection, alice, mint, alice.publicKey);
-    
-    // userBalance = await provider.connection.getBalance(alice.publicKey);  
-    // console.log(userBalance);
+    await spl.mintTo(
+      provider.connection,
+      alice,
+      tokenMint,
+      aliceTokenWallet,
+      alice.publicKey,
+      amount,
+      [alice]
+    );
 
+    let _aliceTokenWallet = await spl.getAccount(
+      provider.connection,
+      aliceTokenWallet
+    );
 
-    await spl.mintTo(provider.connection, alice, mint, aliceTokenWallet, alice.publicKey,amount,[alice]);
+    assert.equal(amount, _aliceTokenWallet.amount);
 
-    // let _aliceTokenWallet = await spl.getAccount(provider.connection ,aliceTokenWallet);
-
-    // console.log(_aliceTokenWallet.amount.toString());
-
-    // userBalance = await provider.connection.getBalance(alice.publicKey);  
-    // console.log(userBalance);
-
-    const {SystemProgram} = anchor.web3;
-
-
-    [statePDA, stateBump] = await anchor.web3.PublicKey.findProgramAddress([Buffer.from("state"), alice.publicKey.toBuffer(), mint.toBuffer(), uidBuffer], program.programId,);
-
-    [escrowPDA, escrowBump] = await anchor.web3.PublicKey.findProgramAddress([Buffer.from("wallet"), alice.publicKey.toBuffer(), mint.toBuffer(), uidBuffer], program.programId,);
-
-    console.log(spl.TOKEN_PROGRAM_ID, anchor.web3.SYSVAR_RENT_PUBKEY, SystemProgram.programId)
-
-    const tx = await program.methods.initialize(uid, stateBump, escrowBump, depositAmount).accounts({
-      applicationState: statePDA,
-      escrowWalletState: escrowPDA,
-      mintOfTokenBeingSent: mint,
-      userSending: alice.publicKey,
-      walletToWithdrawFrom: aliceTokenWallet,
-      systemProgram: anchor.web3.SystemProgram.programId,
-      rent: anchor.web3.SYSVAR_RENT_PUBKEY,
-      tokenProgram: spl.TOKEN_PROGRAM_ID,
-    }).signers([alice]).rpc();
-
-
-    console.log(tx)
-
-    // const tx = await programAsd.methods.initialize()
-    //   .accounts({
-    //     storedData: storedData,
-    //     signer: keyPair.publicKey,
-    //     systemProgram: anchor.web3.SystemProgram.programId,
-    //   }).signers([keyPair]).rpc();
-    
   });
+
+  it("Is deposited!", async () => {
+    // Add your test here.
+
+    [statePDA, stateBump, escrowPDA, escrowBump] = await getPDA(tokenMint);
+
+    let tx1 = await program.methods
+      .initialize(uid, stateBump, escrowBump, depositAmount)
+      .accounts({
+        applicationState: statePDA,
+        escrowWalletState: escrowPDA,
+        mintOfTokenBeingSent: tokenMint,
+        userSending: alice.publicKey,
+        walletToWithdrawFrom: aliceTokenWallet,
+        systemProgram: anchor.web3.SystemProgram.programId,
+        rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+        tokenProgram: spl.TOKEN_PROGRAM_ID,
+      })
+      .signers([alice])
+      .rpc();
+
+    let _aliceTokenWallet = await spl.getAccount(
+      provider.connection,
+      aliceTokenWallet
+    );
+    assert.strictEqual(
+      (amount - dep).toString(),
+      _aliceTokenWallet.amount.toString()
+    );
+
+    let _pdaEscrow = await spl.getAccount(provider.connection, escrowPDA);
+
+    assert.equal(depositAmount, _pdaEscrow.amount.toString());
+
+  });
+
+  it("mint some extra tokens to escrow for paying the reward", async() => {
+    await spl.mintTo(
+      provider.connection,
+      alice,
+      tokenMint,
+      escrowPDA,
+      alice.publicKey,
+      amount,
+      [alice]
+    );
+
+    let escrowPDAWallet = await spl.getAccount(provider.connection, escrowPDA);
+
+    assert.equal(escrowPDAWallet.amount, amount + dep);
+
+  })
+
+  it("is able to withdraw with a reward", async () => {
+        
+
+    let timeInYears = 1;
+    let timePeriod = new anchor.BN(timeInYears);
+
+    let tx2 = await program.methods
+      .withdrawFunds(uid, stateBump, escrowBump, depositAmount, timePeriod)
+      .accounts({
+        applicationState: statePDA,
+        escrowWalletState: escrowPDA,
+        mintOfTokenBeingSent: tokenMint,
+        userSending: alice.publicKey,
+        refundWallet: aliceTokenWallet,
+        systemProgram: anchor.web3.SystemProgram.programId,
+        rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+        tokenProgram: spl.TOKEN_PROGRAM_ID,
+      })
+      .signers([alice])
+      .rpc();
+
+    let total_amount = amount + (dep * 10 * timeInYears) / 100;
+    let escrow_balance = amount - (dep * 10 * timeInYears) / 100;
+
+    let _pdaEscrow = await spl.getAccount(provider.connection, escrowPDA);
+    let _aliceTokenWallet = await spl.getAccount(
+      provider.connection,
+      aliceTokenWallet
+    );
+    
+    assert.equal(escrow_balance, _pdaEscrow.amount);
+    assert.equal(total_amount, _aliceTokenWallet.amount);
+
+  })
+
 });
