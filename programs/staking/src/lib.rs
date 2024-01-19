@@ -1,6 +1,6 @@
 use anchor_lang::prelude::*;
 
-mod events;
+mod errors;
 mod instructions;
 mod state;
 mod utils;

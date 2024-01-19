@@ -1,4 +1,4 @@
-use crate::events::ErrorCode;
+use crate::errors::ErrorCode;
 use crate::state::State;
 use crate::utils::calculate_rewards;
 use anchor_lang::prelude::*;
